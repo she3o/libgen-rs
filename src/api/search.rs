@@ -155,14 +155,20 @@ impl Search {
     }
 
     async fn get_books(&self, hashes: &[String], client: &Client) -> Result<Vec<Book>, String> {
+        //  Initializes an empty vector `parsed_books` to hold the parsed book data.
         let mut parsed_books: Vec<Book> = Vec::new();
+        //  Creates an asynchronous scope, setting up shared references to the `json_search_url` and `cover_url` using `Arc` for concurrent access.
         let search_url = Arc::new(self.json_search_url.clone());
         let cover_url = Arc::new(self.cover_url.clone());
+        //  Initializes a `FuturesUnordered` stream to collect and execute the asynchronous tasks for fetching book data.
         let mut futures = FuturesUnordered::new();
 
+        //  For each `hash`, create an asynchronous closure (`future_book_data_as_json`) that:
         for hash in hashes {
+            //   Constructs a search URL for the current `hash`.
             let search_url = search_url.clone();
             let cover_url = cover_url.clone();
+            //   Makes an asynchronous HTTP request to fetch book data from the constructed search URL.
             let future_book_data_as_json = async move {
                 let mut search_url = Url::parse(search_url.as_str()).map_err(|e| e.to_string())?;
                 search_url
@@ -176,24 +182,31 @@ impl Search {
 
                 let request_content_as_str =
                     std::str::from_utf8(&request_content).map_err(|e| e.to_string())?;
+                //     Parses the received JSON response into a vector of `Book` objects.
                 let mut books = serde_json::from_str::<Vec<Book>>(request_content_as_str)
                     .map_err(|e| e.to_string())?;
 
+                //     Modifies the `coverurl` field of each `Book` using the `cover_url` provided in the outer scope.
                 for book in books.iter_mut() {
                     book.coverurl = cover_url.replace("{cover-url}", &book.coverurl);
                 }
 
-                //  https://github.com/rust-lang/rust/issues/63502#issue-479823017
+                //     Returns the vector of `Book` objects or an error message.
                 Ok::<Vec<Book>, String>(books)
             };
+            //  Push the created asynchronous closure into a `futures` vector.
             futures.push(future_book_data_as_json);
 
             //  TODO: use multiple search urls? it gets rate limited pretty quickly with 10 concurrent requests
             //  TODO: don't hardcode the max number of concurrent tasks
+
+            //  Check if there are 5 unresolved asynchronous tasks in `futures`. If so, wait for the first one to complete:
             if futures.len() == 5 {
                 if let Some(future) = futures.next().await {
                     match future {
+                        //     If successful, append the retrieved books to the `parsed_books`.
                         Ok(mut item) => parsed_books.append(&mut item),
+                        //     If there's an error, log it.
                         Err(e) => tracing::error!("{}", e),
                     }
                 }

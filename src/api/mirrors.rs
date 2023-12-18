@@ -33,6 +33,7 @@ pub struct DownloadMirror {
 }
 
 impl Mirror {
+    //send an HTTP GET request using `reqwest::Client`, either returns `Ok(())` or reports an error with the corresponding HTTP status code
     pub async fn check_connection(&self, client: &Client) -> Result<(), StatusCode> {
         client
             .get(self.url.as_str())
